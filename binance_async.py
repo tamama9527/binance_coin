@@ -7,13 +7,27 @@ from datetime import datetime
 import numpy as np
 import config
 import logging
-
+import ccxt 
+from test import buy_long, buy_short
 dev_logger: logging.Logger = logging.getLogger(name='dev')
 dev_logger.setLevel('INFO')
 handler: logging.StreamHandler = logging.StreamHandler()
 formatter: logging.Formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 dev_logger.addHandler(handler)
+
+okx_exchange = ccxt.okx({
+    'apiKey': config.okx['apiKey'],
+    'secret': config.okx['secret'],
+    'password': config.okx['password'],
+    'options': {
+        'defaultType': 'swap',
+    },
+    'contract': False,
+    'settle': 'USDT',
+    'settleId': 'USDT',
+})
+
 
 coins = {}
 
@@ -76,7 +90,11 @@ async def klineSocketSub(streamerList,client):
         while True:
             res = await tscm.recv()
             await stragey(res)
-
+'''
+策略1
+跟BTC比價差,量與自己的平均量比
+當與btc價差>1% 且量大於10分鐘均量1.5被時會觸發
+'''
 async def stragey(response):
     symbol = response['data']['s']
     averagePrice = coins[symbol]['averagePrice']
@@ -86,6 +104,9 @@ async def stragey(response):
     coins[symbol]['lastPrice'] = newestPrice
     priceChange = newestPrice / averagePrice
     volumeDiff = newestVolume / averageVolume
+    if averagePrice == 0 or averagePrice == 0:
+        dev_logger.info('averagePrice or averageVolume is 0')
+        return
     # 最新價格 - 均價(10個1m線)/ 最新價格
     priceDiffWithBTC = (priceChange / (coins['BTCUSDT']['lastPrice'] / coins['BTCUSDT']['averagePrice'])) - 1
     #volumeDiff = round(volumeChange / coins[symbol]['averageVolume'] * 100, 3)
@@ -96,8 +117,18 @@ async def stragey(response):
     #dev_logger.info(symbol+ ' 現在價格:' + str(newestPrice) + ' MA10_1m:'+ str(round(averagePrice, 4)) + ' 價格差比:' + str(priceDiffWithBTC) + ' 量差比:' + str(volumeDiffWithBTC))
     if (priceDiffWithBTC > 0.01 or priceDiffWithBTC < -0.01) and volumeDiff > 1.5 and coins[symbol]['Already'] == 0:
         dev_logger.info(symbol+ ' 現在價格:' + str(newestPrice) + ' MA10_1m:'+ str(round(averagePrice, 4)) + ' 價格差比:' + str(round(priceDiffWithBTC*100,3))+ '%' + ' 量差比:' + str(round(volumeDiff*100,2)) +'%')
-        # 發出通知後 3分鐘內不要重複通知
-        coins[symbol]['Already'] = 3
+        if priceDiffWithBTC > 0:
+            try:
+                buy_long(symbol= str(symbol).replace('USDT', '/USDT:USDT'),last_price=newestPrice)
+            except:
+                pass
+        else:
+            try:
+                buy_short(symbol= str(symbol).replace('USDT', '/USDT:USDT'),last_price=newestPrice)
+            except:
+                pass
+        # 發出通知後 5分鐘內不要重複通知
+        coins[symbol]['Already'] = 5
     if response['data']['k']['x'] is True and coins[symbol]['Already'] > 0:
         coins[symbol]['Already'] = coins[symbol]['Already'] - 1
 
