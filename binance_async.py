@@ -102,6 +102,8 @@ async def stragey(response):
     newestPrice = float(response['data']['k']['c'])
     newestVolume = float(response['data']['k']['q'])
     coins[symbol]['lastPrice'] = newestPrice
+    if averageVolume == 0 or averagePrice == 0:
+        return
     priceChange = newestPrice / averagePrice
     volumeDiff = newestVolume / averageVolume
     if averagePrice == 0 or averagePrice == 0:
